@@ -1476,10 +1476,10 @@ body {
     grid;
 
   grid-template-columns:
-    160px
-    160px
-    minmax(350px, 1fr)
-    280px;
+    190px
+    190px
+    minmax(390px, 1fr)
+    300px;
 
   gap:
     25px;
@@ -1491,14 +1491,13 @@ body {
 
 
 /* =====================================================
-   VALUE CARDS
+   VALUE / LIQUID CARDS
 ===================================================== */
-
 
 .value-card {
 
   height:
-    280px;
+    300px;
 
   border:
     2px solid #222;
@@ -1519,15 +1518,17 @@ body {
     center;
 
   padding:
-    20px;
+    14px 10px;
+
+  overflow:
+    hidden;
 
 }
-
 
 .card-title {
 
   font-size:
-    18px;
+    17px;
 
   font-weight:
     800;
@@ -1536,24 +1537,235 @@ body {
     center;
 
   line-height:
-    1.3;
+    1.25;
 
   margin-bottom:
-    25px;
+    8px;
 
 }
 
+.liquid-wrap {
+
+  display:
+    flex;
+
+  align-items:
+    center;
+
+  justify-content:
+    center;
+
+  gap:
+    6px;
+
+}
+
+.liquid-tank {
+
+  position:
+    relative;
+
+  width:
+    110px;
+
+  height:
+    178px;
+
+  border:
+    2px solid #222;
+
+  border-radius:
+    10px 10px 16px 16px;
+
+  background:
+    linear-gradient(#ffffff, #f4f7fa);
+
+  overflow:
+    hidden;
+
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,0.04);
+
+}
+
+.liquid {
+
+  position:
+    absolute;
+
+  left:
+    0;
+
+  right:
+    0;
+
+  bottom:
+    0;
+
+  height:
+    0%;
+
+  transition:
+    height 0.8s ease;
+
+  overflow:
+    hidden;
+
+}
+
+.liquid::before,
+.liquid::after {
+
+  content:
+    "";
+
+  position:
+    absolute;
+
+  left:
+    -15%;
+
+  width:
+    130%;
+
+  height:
+    18px;
+
+  border-radius:
+    45%;
+
+}
+
+.liquid::before {
+
+  top:
+    -9px;
+
+  background:
+    rgba(255,255,255,0.42);
+
+  animation:
+    waveMove 2.4s ease-in-out infinite;
+
+}
+
+.liquid::after {
+
+  top:
+    -5px;
+
+  background:
+    rgba(255,255,255,0.18);
+
+  animation:
+    waveMoveReverse 3s ease-in-out infinite;
+
+}
+
+.liquid-blue {
+
+  background:
+    linear-gradient(
+      to top,
+      #1769e0 0%,
+      #287bea 65%,
+      #4c91f2 100%
+    );
+
+}
+
+.liquid-red {
+
+  background:
+    linear-gradient(
+      to top,
+      #ef3030 0%,
+      #f04444 65%,
+      #ff6a6a 100%
+    );
+
+}
+
+@keyframes waveMove {
+
+  0%, 100% {
+    transform: translateX(-3%) rotate(0deg);
+  }
+
+  50% {
+    transform: translateX(3%) rotate(1.2deg);
+  }
+
+}
+
+@keyframes waveMoveReverse {
+
+  0%, 100% {
+    transform: translateX(3%) rotate(0deg);
+  }
+
+  50% {
+    transform: translateX(-3%) rotate(-1deg);
+  }
+
+}
+
+.tick-scale {
+
+  height:
+    178px;
+
+  display:
+    flex;
+
+  flex-direction:
+    column;
+
+  justify-content:
+    space-between;
+
+  font-size:
+    9px;
+
+  color:
+    #333;
+
+  line-height:
+    1;
+
+  padding:
+    1px 0;
+
+}
 
 .card-value {
 
+  margin-top:
+    7px;
+
   font-size:
-    28px;
+    25px;
 
   font-weight:
     800;
 
 }
 
+.card-scale-label {
+
+  margin-top:
+    2px;
+
+  font-size:
+    11px;
+
+  font-weight:
+    700;
+
+  color:
+    #555;
+
+}
 
 /* =====================================================
    GRAPH
@@ -1989,7 +2201,7 @@ body {
   .value-card {
 
     height:
-      180px;
+      300px;
 
   }
 
@@ -2042,25 +2254,37 @@ RoomMonitor-%DEVICE%
 
 <div class="value-card">
 
-
 <div class="card-title">
-
-Room<br>
-Humidity
-
+Room<br>Humidity
 </div>
 
+<div class="liquid-wrap">
+
+  <div class="liquid-tank">
+    <div id="humidityLiquid" class="liquid liquid-blue"></div>
+  </div>
+
+  <div class="tick-scale">
+    <span>200</span>
+    <span>180</span>
+    <span>160</span>
+    <span>140</span>
+    <span>120</span>
+    <span>100</span>
+    <span>80</span>
+    <span>60</span>
+    <span>40</span>
+    <span>20</span>
+    <span>0</span>
+  </div>
+
+</div>
 
 <div class="card-value">
-
-<span id="humidity">
---
-</span>
-
-%
-
+  <span id="humidity">--</span> %
 </div>
 
+<div class="card-scale-label">of 200 %</div>
 
 </div>
 
@@ -2072,25 +2296,37 @@ Humidity
 
 <div class="value-card">
 
-
 <div class="card-title">
-
-Room<br>
-Temperature
-
+Room<br>Temperature
 </div>
 
+<div class="liquid-wrap">
+
+  <div class="liquid-tank">
+    <div id="temperatureLiquid" class="liquid liquid-red"></div>
+  </div>
+
+  <div class="tick-scale">
+    <span>100</span>
+    <span>90</span>
+    <span>80</span>
+    <span>70</span>
+    <span>60</span>
+    <span>50</span>
+    <span>40</span>
+    <span>30</span>
+    <span>20</span>
+    <span>10</span>
+    <span>0</span>
+  </div>
+
+</div>
 
 <div class="card-value">
-
-<span id="temperature">
---
-</span>
-
-°C
-
+  <span id="temperature">--</span> °C
 </div>
 
+<div class="card-scale-label">of 100 °C</div>
 
 </div>
 
@@ -2358,7 +2594,7 @@ const sensorChart =
               2,
 
             tension:
-              0.3,
+              0.22,
 
             yAxisID:
               "temperatureAxis"
@@ -2387,7 +2623,7 @@ const sensorChart =
               2,
 
             tension:
-              0.3,
+              0.22,
 
             yAxisID:
               "humidityAxis"
@@ -2450,6 +2686,13 @@ const sensorChart =
             position:
               "left",
 
+            // Full 0-100 °C scale, matching the temperature liquid gauge.
+            min:
+              0,
+
+            max:
+              100,
+
             title:
             {
 
@@ -2473,11 +2716,12 @@ const sensorChart =
             position:
               "right",
 
+            // Full 0-200 scale, matching the humidity liquid gauge.
             min:
               0,
 
             max:
-              100,
+              200,
 
             title:
             {
@@ -2566,6 +2810,26 @@ async function updateData() {
         ).toFixed(
           1
         );
+
+      // Liquid gauges: humidity uses 0-200 scale,
+      // temperature uses 0-100 scale.
+      const humidityPercent = Math.max(0, Math.min(100,
+        (Number(data.humidity) / 200) * 100
+      ));
+
+      const temperaturePercent = Math.max(0, Math.min(100,
+        (Number(data.temperature) / 100) * 100
+      ));
+
+      document
+        .getElementById("humidityLiquid")
+        .style.height =
+        humidityPercent.toFixed(2) + "%";
+
+      document
+        .getElementById("temperatureLiquid")
+        .style.height =
+        temperaturePercent.toFixed(2) + "%";
 
 
       // ===============================================
