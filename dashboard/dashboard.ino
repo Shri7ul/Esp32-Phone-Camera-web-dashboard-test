@@ -10,8 +10,8 @@
 // WIFI
 // =====================================================
 
-const char* WIFI_SSID = "Area 51 (2.4)";
-const char* WIFI_PASSWORD = "2444666668888888";
+const char* WIFI_SSID = "Wifi Name";
+const char* WIFI_PASSWORD = "Wifi Pass";
 
 
 // =====================================================
