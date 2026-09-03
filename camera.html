@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+  <title>Mobile Camera</title>
+
+  <!-- PeerJS -->
+  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #111827;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+
+    .container {
+      max-width: 700px;
+      margin: auto;
+    }
+
+    h1 {
+      margin-top: 20px;
+    }
+
+    video {
+      width: 100%;
+      max-width: 650px;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      background: black;
+      border-radius: 20px;
+      margin-top: 25px;
+      border: 3px solid #374151;
+    }
+
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 14px 22px;
+      margin: 10px 5px;
+      font-size: 16px;
+      color: white;
+      cursor: pointer;
+    }
+
+    #startBtn {
+      background: #22c55e;
+    }
+
+    #switchBtn {
+      background: #3b82f6;
+    }
+
+    #stopBtn {
+      background: #ef4444;
+    }
+
+    #status {
+      margin-top: 18px;
+      color: #facc15;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+
+
+<body>
+
+<div class="container">
+
+  <h1>📱 Mobile Camera</h1>
+
+  <p>
+    This camera will be shared with the Room Monitoring Dashboard.
+  </p>
+
+  <video
+    id="localVideo"
+    autoplay
+    playsinline
+    muted>
+  </video>
+
+  <br>
+
+  <button id="startBtn"
+          onclick="startCamera()">
+    Start Camera
+  </button>
+
+  <button id="switchBtn"
+          onclick="switchCamera()">
+    Switch Camera
+  </button>
+
+  <button id="stopBtn"
+          onclick="stopCamera()">
+    Stop Camera
+  </button>
+
+  <div id="status">
+    Connecting...
+  </div>
+
+</div>
+
+
+<script>
+
+let peer = null;
+let localStream = null;
+
+let facingMode = "environment";
+
+let dashboardPeerID = null;
+
+
+// =====================================================
+// Read dashboard Peer ID from URL
+// =====================================================
+
+const params =
+  new URLSearchParams(window.location.search);
+
+dashboardPeerID =
+  params.get("peer");
+
+
+console.log(
+  "Dashboard Peer ID:",
+  dashboardPeerID
+);
+
+
+// =====================================================
+// DOM
+// =====================================================
+
+const video =
+  document.getElementById("localVideo");
+
+const status =
+  document.getElementById("status");
+
+
+// =====================================================
+// Check Peer ID
+// =====================================================
+
+if (!dashboardPeerID) {
+
+  status.innerText =
+    "❌ Dashboard connection ID missing.";
+
+} else {
+
+  initializePeer();
+
+}
+
+
+// =====================================================
+// Initialize PeerJS
+// =====================================================
+
+function initializePeer() {
+
+  status.innerText =
+    "Connecting to signaling server...";
+
+
+  peer = new Peer();
+
+
+  peer.on("open", function(id) {
+
+    console.log(
+      "Phone Peer ID:",
+      id
+    );
+
+
+    status.innerText =
+      "✅ Connected. Starting camera...";
+
+
+    startCamera();
+
+  });
+
+
+  peer.on("error", function(error) {
+
+    console.error(
+      "PeerJS error:",
+      error
+    );
+
+
+    status.innerText =
+      "❌ Connection error: " +
+      error.type;
+
+  });
+
+}
+
+
+// =====================================================
+// Start Phone Camera
+// =====================================================
+
+async function startCamera() {
+
+  try {
+
+    // Browser support check
+
+    if (
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia
+    ) {
+
+      status.innerText =
+        "❌ Camera API unavailable. Please use HTTPS.";
+
+      return;
+    }
+
+
+    // Stop previous stream
+
+    if (localStream) {
+
+      localStream
+        .getTracks()
+        .forEach(track => track.stop());
+
+    }
+
+
+    status.innerText =
+      "Requesting camera permission...";
+
+
+    // Get phone camera
+
+    localStream =
+      await navigator.mediaDevices.getUserMedia({
+
+        video: {
+
+          facingMode: {
+            ideal: facingMode
+          },
+
+          width: {
+            ideal: 1280
+          },
+
+          height: {
+            ideal: 720
+          },
+
+          frameRate: {
+            ideal: 30,
+            max: 30
+          }
+
+        },
+
+        audio: false
+
+      });
+
+
+    // Show local camera
+
+    video.srcObject =
+      localStream;
+
+
+    status.innerText =
+      "📷 Camera ON — connecting to dashboard...";
+
+
+    // Send camera to ESP32 dashboard
+
+    callDashboard();
+
+  }
+
+
+  catch (error) {
+
+    console.error(
+      "Camera error:",
+      error
+    );
+
+
+    status.innerText =
+      "❌ Camera error: " +
+      error.name +
+      " - " +
+      error.message;
+
+  }
+
+}
+
+
+// =====================================================
+// Send camera stream to dashboard
+// =====================================================
+
+function callDashboard() {
+
+  if (
+    !peer ||
+    !peer.open ||
+    !localStream ||
+    !dashboardPeerID
+  ) {
+
+    return;
+  }
+
+
+  console.log(
+    "Calling dashboard:",
+    dashboardPeerID
+  );
+
+
+  const call =
+    peer.call(
+      dashboardPeerID,
+      localStream
+    );
+
+
+  call.on("close", function() {
+
+    status.innerText =
+      "Dashboard disconnected.";
+
+  });
+
+
+  call.on("error", function(error) {
+
+    console.error(
+      "WebRTC call error:",
+      error
+    );
+
+
+    status.innerText =
+      "❌ Video connection failed.";
+
+  });
+
+}
+
+
+// =====================================================
+// Switch Front / Rear Camera
+// =====================================================
+
+async function switchCamera() {
+
+  facingMode =
+    facingMode === "environment"
+      ? "user"
+      : "environment";
+
+
+  await startCamera();
+
+}
+
+
+// =====================================================
+// Stop Camera
+// =====================================================
+
+function stopCamera() {
+
+  if (localStream) {
+
+    localStream
+      .getTracks()
+      .forEach(track => track.stop());
+
+    localStream = null;
+  }
+
+
+  video.srcObject = null;
+
+
+  status.innerText =
+    "Camera stopped.";
+
+}
+
+</script>
+
+</body>
+
+</html>
