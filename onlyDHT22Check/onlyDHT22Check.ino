@@ -6,11 +6,22 @@
 
 
 // =====================================================
+// DEVICE ID
+// =====================================================
+// ESP32 #01 -> "01"
+// ESP32 #02 -> "02"
+// ESP32 #03 -> "03"
+// =====================================================
+
+#define DEVICE_ID "01"
+
+
+// =====================================================
 // DHT22
 // =====================================================
 
-#define DHT_PIN     1
-#define DHTTYPE     DHT22
+#define DHT_PIN   1
+#define DHTTYPE   DHT22
 
 DHT dht(
   DHT_PIN,
@@ -19,20 +30,21 @@ DHT dht(
 
 
 // =====================================================
-// ESP32 BOOT BUTTON
-// GPIO0 = BOOT
+// BOOT BUTTON
+// ESP32-S3 BOOT = GPIO0
 // =====================================================
 
 #define BOOT_BUTTON 0
+
+#define CONFIG_HOLD_TIME 3000
 
 
 // =====================================================
 // DEFAULT WIFI
 // =====================================================
-//
-// এখানে তোমার নিজের default Wi-Fi credentials দাও.
-// এগুলো saved Wi-Fi fail করলে দ্বিতীয়বার try করবে.
-//
+// Saved Wi-Fi fail করলে এগুলো try করবে.
+// নিজের Lab/default Wi-Fi এখানে বসাও.
+// =====================================================
 
 const char* DEFAULT_WIFI_SSID =
   "YOUR_DEFAULT_WIFI";
@@ -42,11 +54,12 @@ const char* DEFAULT_WIFI_PASSWORD =
 
 
 // =====================================================
-// SETUP HOTSPOT
+// MANAGEMENT ACCESS POINT
 // =====================================================
 
-const char* AP_SSID =
-  "RoomMonitor-Setup";
+String AP_SSID =
+  String("RoomMonitor-") +
+  DEVICE_ID;
 
 const char* AP_PASSWORD =
   "12345678";
@@ -56,12 +69,14 @@ const char* AP_PASSWORD =
 // WEB SERVER
 // =====================================================
 
-WebServer server(80);
+WebServer server(
+  80
+);
 
 
 // =====================================================
 // DNS SERVER
-// Captive portal
+// শুধু setup/captive portal mode-এ ব্যবহার হবে
 // =====================================================
 
 DNSServer dnsServer;
@@ -70,15 +85,14 @@ const byte DNS_PORT = 53;
 
 
 // =====================================================
-// PREFERENCES
-// Persistent Wi-Fi credentials
+// NVS / PREFERENCES
 // =====================================================
 
 Preferences preferences;
 
 
 // =====================================================
-// WIFI CREDENTIALS
+// SAVED WIFI
 // =====================================================
 
 String savedSSID = "";
@@ -86,39 +100,83 @@ String savedPassword = "";
 
 
 // =====================================================
-// MODE
+// DEVICE STATE
 // =====================================================
 
 bool setupMode = false;
+
+bool wifiConnected = false;
 
 
 // =====================================================
 // DHT DATA
 // =====================================================
 
-float temperature = 0.0;
-float humidity = 0.0;
+float temperature = NAN;
+float humidity = NAN;
 
 bool dhtOK = false;
 
 unsigned long lastDHTRead = 0;
 
-const unsigned long DHT_INTERVAL = 2500;
+const unsigned long DHT_INTERVAL =
+  2500;
 
 
 // =====================================================
-// BOOT BUTTON CONFIG
+// BOOT BUTTON
 // =====================================================
 
-unsigned long bootPressStart = 0;
+bool buttonPressed = false;
 
-bool bootButtonActive = false;
-
-const unsigned long CONFIG_HOLD_TIME = 3000;
+unsigned long buttonStart = 0;
 
 
 // =====================================================
-// READ SAVED WIFI
+// FORWARD DECLARATIONS
+// =====================================================
+
+void startSetupMode();
+
+void startNormalMode();
+
+void handleRoot();
+
+void handleWiFiPage();
+
+void handleSaveWiFi();
+
+void handleResetWiFi();
+
+void handleData();
+
+void handleNotFound();
+
+void handleSetupPage();
+
+void readDHT();
+
+void loadWiFiCredentials();
+
+void saveWiFiCredentials(
+  String ssid,
+  String password
+);
+
+void clearWiFiCredentials();
+
+bool connectToWiFi(
+  String ssid,
+  String password
+);
+
+void startAccessPoint();
+
+void checkBootButton();
+
+
+// =====================================================
+// LOAD SAVED WIFI
 // =====================================================
 
 void loadWiFiCredentials() {
@@ -148,11 +206,17 @@ void loadWiFiCredentials() {
 
   Serial.println();
   Serial.println(
-    "Stored Wi-Fi:"
+    "Stored Wi-Fi"
+  );
+
+  Serial.println(
+    "-------------------------"
   );
 
 
-  if (savedSSID.length() > 0) {
+  if (
+    savedSSID.length() > 0
+  ) {
 
     Serial.print(
       "SSID: "
@@ -184,7 +248,6 @@ void saveWiFiCredentials(
   String password
 ) {
 
-
   preferences.begin(
     "wifi",
     false
@@ -207,6 +270,7 @@ void saveWiFiCredentials(
 
 
   Serial.println();
+
   Serial.println(
     "Wi-Fi credentials saved."
   );
@@ -233,14 +297,110 @@ void clearWiFiCredentials() {
 
 
   Serial.println(
-    "Saved Wi-Fi credentials cleared."
+    "Saved Wi-Fi cleared."
   );
 
 }
 
 
 // =====================================================
-// CONNECT TO WIFI
+// START ACCESS POINT
+// =====================================================
+
+void startAccessPoint() {
+
+  Serial.println();
+
+  Serial.println(
+    "Starting Management AP..."
+  );
+
+
+  // AP + STA
+
+  WiFi.mode(
+    WIFI_AP_STA
+  );
+
+
+  delay(300);
+
+
+  bool result =
+    WiFi.softAP(
+      AP_SSID.c_str(),
+      AP_PASSWORD
+    );
+
+
+  if (result) {
+
+    Serial.println();
+
+    Serial.println(
+      "========================================"
+    );
+
+    Serial.println(
+      "MANAGEMENT AP READY"
+    );
+
+    Serial.println(
+      "========================================"
+    );
+
+
+    Serial.print(
+      "AP SSID: "
+    );
+
+    Serial.println(
+      AP_SSID
+    );
+
+
+    Serial.print(
+      "AP Password: "
+    );
+
+    Serial.println(
+      AP_PASSWORD
+    );
+
+
+    Serial.print(
+      "AP IP: "
+    );
+
+    Serial.println(
+      WiFi.softAPIP()
+    );
+
+
+    Serial.println(
+      "AP Dashboard Port: 80"
+    );
+
+
+    Serial.println(
+      "========================================"
+    );
+
+  }
+
+  else {
+
+    Serial.println(
+      "ERROR: Failed to start AP"
+    );
+
+  }
+
+}
+
+
+// =====================================================
+// CONNECT WIFI
 // =====================================================
 
 bool connectToWiFi(
@@ -260,6 +420,11 @@ bool connectToWiFi(
 
   Serial.println();
 
+  Serial.println(
+    "----------------------------------------"
+  );
+
+
   Serial.print(
     "Trying Wi-Fi: "
   );
@@ -269,24 +434,19 @@ bool connectToWiFi(
   );
 
 
-  WiFi.mode(
-    WIFI_STA
-  );
-
-
   WiFi.begin(
     ssid.c_str(),
     password.c_str()
   );
 
 
-  unsigned long startTime =
+  unsigned long start =
     millis();
 
 
   while (
     WiFi.status() != WL_CONNECTED &&
-    millis() - startTime < 15000
+    millis() - start < 15000
   ) {
 
     delay(500);
@@ -302,13 +462,13 @@ bool connectToWiFi(
 
 
   if (
-    WiFi.status() == WL_CONNECTED
+    WiFi.status() ==
+    WL_CONNECTED
   ) {
 
 
-    Serial.println(
-      "================================"
-    );
+    wifiConnected =
+      true;
 
 
     Serial.println(
@@ -320,16 +480,14 @@ bool connectToWiFi(
       "SSID: "
     );
 
-
     Serial.println(
       WiFi.SSID()
     );
 
 
     Serial.print(
-      "IP Address: "
+      "Lab Wi-Fi IP: "
     );
-
 
     Serial.println(
       WiFi.localIP()
@@ -337,14 +495,21 @@ bool connectToWiFi(
 
 
     Serial.print(
-      "Signal RSSI: "
+      "Gateway: "
+    );
+
+    Serial.println(
+      WiFi.gatewayIP()
     );
 
 
     Serial.print(
-      WiFi.RSSI()
+      "RSSI: "
     );
 
+    Serial.print(
+      WiFi.RSSI()
+    );
 
     Serial.println(
       " dBm"
@@ -352,7 +517,7 @@ bool connectToWiFi(
 
 
     Serial.println(
-      "================================"
+      "----------------------------------------"
     );
 
 
@@ -361,17 +526,21 @@ bool connectToWiFi(
   }
 
 
+  wifiConnected =
+    false;
+
+
   Serial.println(
-    "Wi-Fi connection FAILED."
+    "Wi-Fi FAILED"
   );
 
 
   WiFi.disconnect(
-    true
+    false
   );
 
 
-  delay(500);
+  delay(300);
 
 
   return false;
@@ -380,89 +549,61 @@ bool connectToWiFi(
 
 
 // =====================================================
-// START SETUP HOTSPOT
+// START SETUP MODE
 // =====================================================
 
 void startSetupMode() {
 
-
-  setupMode = true;
+  setupMode =
+    true;
 
 
   Serial.println();
-  Serial.println(
-    "========================================"
-  );
-
-
-  Serial.println(
-    "STARTING WIFI SETUP HOTSPOT"
-  );
-
 
   Serial.println(
     "========================================"
   );
 
+  Serial.println(
+    "WIFI SETUP MODE"
+  );
 
-  WiFi.disconnect(
-    true
+  Serial.println(
+    "========================================"
   );
 
 
-  delay(500);
+  // Start AP
+
+  if (
+    WiFi.getMode() != WIFI_AP_STA
+  ) {
+
+    WiFi.mode(
+      WIFI_AP_STA
+    );
+
+  }
 
 
-  WiFi.mode(
-    WIFI_AP
-  );
+  // Ensure AP is running
 
+  if (
+    WiFi.softAPIP() ==
+    IPAddress(0, 0, 0, 0)
+  ) {
 
-  WiFi.softAP(
-    AP_SSID,
-    AP_PASSWORD
-  );
+    startAccessPoint();
 
-
-  delay(500);
+  }
 
 
   IPAddress apIP =
     WiFi.softAPIP();
 
 
-  Serial.print(
-    "Hotspot SSID: "
-  );
-
-
-  Serial.println(
-    AP_SSID
-  );
-
-
-  Serial.print(
-    "Hotspot Password: "
-  );
-
-
-  Serial.println(
-    AP_PASSWORD
-  );
-
-
-  Serial.print(
-    "Setup IP: "
-  );
-
-
-  Serial.println(
-    apIP
-  );
-
-
   // ===================================================
-  // CAPTIVE PORTAL DNS
+  // DNS
   // ===================================================
 
   dnsServer.start(
@@ -497,16 +638,12 @@ void startSetupMode() {
   );
 
 
-  // Android captive portal
-
   server.on(
     "/generate_204",
     HTTP_GET,
     handleSetupPage
   );
 
-
-  // iPhone captive portal
 
   server.on(
     "/hotspot-detect.html",
@@ -538,6 +675,7 @@ void startSetupMode() {
 
 
   Serial.println();
+
   Serial.println(
     "SETUP PORTAL READY"
   );
@@ -546,7 +684,6 @@ void startSetupMode() {
   Serial.print(
     "Open: http://"
   );
-
 
   Serial.println(
     apIP
@@ -573,9 +710,10 @@ void handleSetupPage() {
 <meta charset="UTF-8">
 
 <meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
+      content="width=device-width,
+               initial-scale=1.0">
 
-<title>Room Monitor Wi-Fi Setup</title>
+<title>Room Monitor Setup</title>
 
 
 <style>
@@ -594,13 +732,15 @@ body {
 
   color: white;
 
-  font-family: Arial, sans-serif;
+  font-family:
+    Arial,
+    sans-serif;
 
 }
 
 .container {
 
-  max-width: 500px;
+  max-width: 520px;
 
   margin: auto;
 
@@ -608,13 +748,13 @@ body {
 
 .card {
 
+  margin-top: 25px;
+
+  padding: 28px;
+
   background: #1f2937;
 
   border-radius: 22px;
-
-  padding: 25px;
-
-  margin-top: 30px;
 
 }
 
@@ -624,6 +764,8 @@ h1 {
 
   color: #22c55e;
 
+  margin-bottom: 8px;
+
 }
 
 .subtitle {
@@ -632,9 +774,23 @@ h1 {
 
   color: #cbd5e1;
 
+  margin-bottom: 25px;
+
   line-height: 1.5;
 
-  margin-bottom: 25px;
+}
+
+.device {
+
+  text-align: center;
+
+  background: #111827;
+
+  padding: 14px;
+
+  border-radius: 12px;
+
+  margin-bottom: 20px;
 
 }
 
@@ -674,11 +830,11 @@ button {
 
   padding: 15px;
 
-  margin-top: 25px;
+  margin-top: 24px;
 
   border: none;
 
-  border-radius: 12px;
+  border-radius: 11px;
 
   background: #22c55e;
 
@@ -698,11 +854,11 @@ button {
 
   background: #111827;
 
-  border-radius: 10px;
-
-  font-size: 14px;
+  border-radius: 12px;
 
   line-height: 1.6;
+
+  font-size: 14px;
 
 }
 
@@ -737,9 +893,20 @@ button {
 
 Wi-Fi Configuration
 
+</div>
+
+
+<div class="device">
+
+<b>Device:</b>
+
+RoomMonitor-%DEVICE%
+
 <br>
 
-Connect your ESP32 to your Wi-Fi network.
+<b>Setup IP:</b>
+
+192.168.4.1
 
 </div>
 
@@ -796,45 +963,43 @@ Save Wi-Fi & Restart
 
 <div class="info">
 
-
-<b>Setup Hotspot</b>
+<b>Management Hotspot</b>
 
 <br><br>
 
-Network:
+SSID:
+
 <strong>
-
-RoomMonitor-Setup
-
+RoomMonitor-%DEVICE%
 </strong>
 
 <br>
 
 Password:
+
 <strong>
-
 12345678
-
 </strong>
 
 <br><br>
 
 After saving, ESP32 will restart
-and connect to the selected Wi-Fi.
+and connect to your Wi-Fi.
 
 </div>
 
 
 <div class="info warning">
 
-If the saved Wi-Fi fails, the ESP32
-will automatically try the default Wi-Fi.
+If the saved Wi-Fi and default Wi-Fi
+both fail, this setup page will
+automatically become available again.
 
 <br><br>
 
-To open this setup again later,
-hold the ESP32 BOOT button for
-3 seconds during normal operation.
+You can also hold the ESP32 BOOT
+button for 3 seconds to enter
+Wi-Fi setup anytime.
 
 </div>
 
@@ -852,6 +1017,12 @@ hold the ESP32 BOOT button for
 )rawliteral";
 
 
+  html.replace(
+    "%DEVICE%",
+    DEVICE_ID
+  );
+
+
   server.send(
     200,
     "text/html; charset=UTF-8",
@@ -862,16 +1033,17 @@ hold the ESP32 BOOT button for
 
 
 // =====================================================
-// SAVE WIFI HANDLER
+// SAVE WIFI
 // =====================================================
 
 void handleSaveWiFi() {
 
 
   if (
-    !server.hasArg("ssid")
+    !server.hasArg(
+      "ssid"
+    )
   ) {
-
 
     server.send(
       400,
@@ -879,37 +1051,39 @@ void handleSaveWiFi() {
       "SSID missing"
     );
 
-
     return;
 
   }
 
 
   String newSSID =
-    server.arg("ssid");
+    server.arg(
+      "ssid"
+    );
 
 
   String newPassword =
-    server.arg("password");
+    server.arg(
+      "password"
+    );
 
 
   newSSID.trim();
 
 
-  Serial.println();
-  Serial.println(
-    "New Wi-Fi received:"
-  );
+  if (
+    newSSID.length() == 0
+  ) {
 
+    server.send(
+      400,
+      "text/plain",
+      "SSID cannot be empty"
+    );
 
-  Serial.print(
-    "SSID: "
-  );
+    return;
 
-
-  Serial.println(
-    newSSID
-  );
+  }
 
 
   saveWiFiCredentials(
@@ -929,9 +1103,10 @@ void handleSaveWiFi() {
 <meta charset="UTF-8">
 
 <meta name="viewport"
-content="width=device-width, initial-scale=1.0">
+content="width=device-width,
+initial-scale=1.0">
 
-<title>Saved</title>
+<title>Wi-Fi Saved</title>
 
 <style>
 
@@ -955,9 +1130,9 @@ body {
 
   margin: auto;
 
-  background: #1f2937;
-
   padding: 30px;
+
+  background: #1f2937;
 
   border-radius: 20px;
 
@@ -973,6 +1148,7 @@ h1 {
 
 </head>
 
+
 <body>
 
 <div class="card">
@@ -985,31 +1161,17 @@ h1 {
 
 <p>
 
-ESP32 will restart and try to connect.
+ESP32 is restarting...
 
 </p>
 
 <p>
 
-Please wait...
+Please reconnect to the configured Wi-Fi.
 
 </p>
 
 </div>
-
-
-<script>
-
-setTimeout(
-  function() {
-
-    location.href = "/";
-
-  },
-  5000
-);
-
-</script>
 
 </body>
 
@@ -1046,7 +1208,7 @@ void handleResetWiFi() {
   server.send(
     200,
     "text/html; charset=UTF-8",
-    "<h1>Wi-Fi credentials cleared. Restarting...</h1>"
+    "<h2>Wi-Fi credentials cleared.<br>Restarting...</h2>"
   );
 
 
@@ -1062,7 +1224,7 @@ void handleResetWiFi() {
 // NORMAL DASHBOARD
 // =====================================================
 
-void handleDashboard() {
+void handleRoot() {
 
 
   String html = R"rawliteral(
@@ -1076,13 +1238,14 @@ void handleDashboard() {
 <meta charset="UTF-8">
 
 <meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
+      content="width=device-width,
+               initial-scale=1.0">
 
 <meta http-equiv="refresh"
       content="5">
 
 
-<title>Room Temperature Monitor</title>
+<title>Room Temperature Monitoring</title>
 
 
 <style>
@@ -1105,9 +1268,9 @@ body {
 
 .container {
 
-  max-width: 850px;
+  max-width: 900px;
 
-  margin: 30px auto;
+  margin: 25px auto;
 
   padding: 20px;
 
@@ -1121,13 +1284,13 @@ h1 {
 
 }
 
-.subtitle {
+.device {
 
   text-align: center;
 
-  color: #6b7280;
+  color: #4b5563;
 
-  margin-bottom: 30px;
+  margin-bottom: 25px;
 
 }
 
@@ -1166,27 +1329,57 @@ h1 {
 
 .value {
 
-  font-size: 38px;
+  font-size: 40px;
 
   font-weight: bold;
 
-  margin-top: 20px;
+  margin-top: 18px;
 
 }
 
 .status {
 
-  margin-top: 25px;
-
-  padding: 18px;
+  margin-top: 20px;
 
   background: white;
 
-  border-radius: 15px;
+  border-radius: 18px;
+
+  padding: 22px;
 
   text-align: center;
 
+  line-height: 1.8;
+
+}
+
+.online {
+
+  color: #16a34a;
+
   font-weight: bold;
+
+}
+
+.offline {
+
+  color: #dc2626;
+
+  font-weight: bold;
+
+}
+
+.info {
+
+  margin-top: 20px;
+
+  padding: 20px;
+
+  background: #111827;
+
+  color: white;
+
+  border-radius: 18px;
 
 }
 
@@ -1194,19 +1387,21 @@ h1 {
 
   display: block;
 
-  text-align: center;
+  margin-top: 20px;
 
-  margin-top: 25px;
+  padding: 15px;
 
-  padding: 14px;
-
-  background: #111827;
+  background: #2563eb;
 
   color: white;
 
+  text-align: center;
+
   text-decoration: none;
 
-  border-radius: 10px;
+  border-radius: 11px;
+
+  font-weight: bold;
 
 }
 
@@ -1238,9 +1433,12 @@ Room Temperature Monitoring
 </h1>
 
 
-<div class="subtitle">
+<div class="device">
 
-ESP32-S3 + DHT22
+Device:
+<b>
+RoomMonitor-%DEVICE%
+</b>
 
 </div>
 
@@ -1287,18 +1485,74 @@ Room Humidity
 
 <div class="status">
 
-DHT22 Status:
-%STATUS%
+DHT22:
 
-<br><br>
+<span class="%DHTCLASS%">
 
-Wi-Fi:
-%SSID%
+%DHTSTATUS%
+
+</span>
 
 <br>
 
-IP:
+Wi-Fi:
+
+<b>
+
+%SSID%
+
+</b>
+
+<br>
+
+Lab IP:
+
+<b>
+
 %IP%
+
+</b>
+
+<br>
+
+Dashboard Port:
+
+<b>
+
+80
+
+</b>
+
+</div>
+
+
+<div class="info">
+
+<b>
+Management AP
+</b>
+
+<br><br>
+
+SSID:
+
+RoomMonitor-%DEVICE%
+
+<br>
+
+AP IP:
+
+192.168.4.1
+
+<br><br>
+
+<b>
+Dashboard
+</b>
+
+<br>
+
+http://%IP%
 
 </div>
 
@@ -1307,7 +1561,7 @@ IP:
   class="config"
   href="/wifi">
 
-Change Wi-Fi Settings
+⚙ Change Wi-Fi Settings
 
 </a>
 
@@ -1322,29 +1576,61 @@ Change Wi-Fi Settings
 )rawliteral";
 
 
+  // ===================================================
+  // VALUES
+  // ===================================================
+
+  String tempText;
+
+  String humText;
+
+
+  if (
+    dhtOK
+  ) {
+
+    tempText =
+      String(
+        temperature,
+        1
+      );
+
+
+    humText =
+      String(
+        humidity,
+        1
+      );
+
+  }
+
+  else {
+
+    tempText =
+      "--";
+
+
+    humText =
+      "--";
+
+  }
+
+
   html.replace(
     "%TEMP%",
-    String(
-      temperature,
-      1
-    )
+    tempText
   );
 
 
   html.replace(
     "%HUM%",
-    String(
-      humidity,
-      1
-    )
+    humText
   );
 
 
   html.replace(
-    "%STATUS%",
-    dhtOK
-      ? "ONLINE"
-      : "ERROR"
+    "%DEVICE%",
+    DEVICE_ID
   );
 
 
@@ -1360,6 +1646,22 @@ Change Wi-Fi Settings
   );
 
 
+  html.replace(
+    "%DHTSTATUS%",
+    dhtOK
+      ? "ONLINE"
+      : "ERROR"
+  );
+
+
+  html.replace(
+    "%DHTCLASS%",
+    dhtOK
+      ? "online"
+      : "offline"
+  );
+
+
   server.send(
     200,
     "text/html; charset=UTF-8",
@@ -1370,10 +1672,10 @@ Change Wi-Fi Settings
 
 
 // =====================================================
-// WIFI CONFIG PAGE FROM NORMAL WIFI
+// WIFI SETTINGS PAGE
 // =====================================================
 
-void handleWiFiConfig() {
+void handleWiFiPage() {
 
 
   String html = R"rawliteral(
@@ -1387,21 +1689,25 @@ void handleWiFiConfig() {
 <meta charset="UTF-8">
 
 <meta name="viewport"
-content="width=device-width, initial-scale=1.0">
+content="width=device-width,
+initial-scale=1.0">
 
 <title>Wi-Fi Settings</title>
+
 
 <style>
 
 body {
 
-  font-family: Arial;
+  margin: 0;
+
+  padding: 20px;
 
   background: #111827;
 
   color: white;
 
-  padding: 20px;
+  font-family: Arial;
 
 }
 
@@ -1409,11 +1715,11 @@ body {
 
   max-width: 500px;
 
-  margin: auto;
-
-  background: #1f2937;
+  margin: 30px auto;
 
   padding: 25px;
+
+  background: #1f2937;
 
   border-radius: 20px;
 
@@ -1425,11 +1731,14 @@ input {
 
   padding: 13px;
 
-  margin: 8px 0 15px;
+  margin:
+    8px 0 15px;
 
-  border-radius: 8px;
+  border-radius: 9px;
 
   border: none;
+
+  font-size: 16px;
 
 }
 
@@ -1471,49 +1780,107 @@ button {
 
 }
 
+.info {
+
+  background: #111827;
+
+  padding: 15px;
+
+  border-radius: 10px;
+
+  margin-bottom: 20px;
+
+  line-height: 1.6;
+
+}
+
 </style>
 
 </head>
 
+
 <body>
+
 
 <div class="card">
 
+
 <h2>
 
-Wi-Fi Settings
+RoomMonitor-%DEVICE%
 
 </h2>
 
+
+<div class="info">
+
+<b>Current Wi-Fi</b>
+
+<br>
+
+SSID:
+%SSID%
+
+<br>
+
+IP:
+%IP%
+
+<br>
+
+Port:
+80
+
+<br>
+
+AP:
+RoomMonitor-%DEVICE%
+
+<br>
+
+AP IP:
+192.168.4.1
+
+</div>
+
+
 <form
-action="/savewifi"
-method="POST">
-
-<label>
-
-Wi-Fi Name
-
-</label>
-
-<input
-
-name="ssid"
-
-value="%SSID%"
-required>
+  action="/savewifi"
+  method="POST">
 
 
 <label>
 
-Wi-Fi Password
+New Wi-Fi Name
 
 </label>
 
+
 <input
 
-name="password"
-type="password"
-placeholder="Enter new password">
+  type="text"
+
+  name="ssid"
+
+  value="%SSID%"
+
+  required>
+
+
+<label>
+
+New Wi-Fi Password
+
+</label>
+
+
+<input
+
+  type="password"
+
+  name="password"
+
+  placeholder="Enter password">
 
 
 <button>
@@ -1522,18 +1889,21 @@ Save & Restart
 
 </button>
 
+
 </form>
 
 
 <a
-class="reset"
-href="/reset">
+  class="reset"
+  href="/reset">
 
 Clear Saved Wi-Fi
 
 </a>
 
+
 </div>
+
 
 </body>
 
@@ -1543,8 +1913,20 @@ Clear Saved Wi-Fi
 
 
   html.replace(
+    "%DEVICE%",
+    DEVICE_ID
+  );
+
+
+  html.replace(
     "%SSID%",
     WiFi.SSID()
+  );
+
+
+  html.replace(
+    "%IP%",
+    WiFi.localIP().toString()
   );
 
 
@@ -1558,7 +1940,214 @@ Clear Saved Wi-Fi
 
 
 // =====================================================
-// READ DHT
+// SAVE WIFI FROM NORMAL DASHBOARD
+// =====================================================
+
+void handleSaveWiFiNormal() {
+
+
+  if (
+    !server.hasArg("ssid")
+  ) {
+
+    server.send(
+      400,
+      "text/plain",
+      "SSID missing"
+    );
+
+    return;
+
+  }
+
+
+  String newSSID =
+    server.arg(
+      "ssid"
+    );
+
+
+  String newPassword =
+    server.arg(
+      "password"
+    );
+
+
+  newSSID.trim();
+
+
+  saveWiFiCredentials(
+    newSSID,
+    newPassword
+  );
+
+
+  server.send(
+    200,
+    "text/html; charset=UTF-8",
+    "<h2>Wi-Fi saved. Restarting...</h2>"
+  );
+
+
+  delay(1500);
+
+
+  ESP.restart();
+
+}
+
+
+// =====================================================
+// DHT DATA API
+// =====================================================
+
+void handleData() {
+
+
+  String json = "{";
+
+
+  json +=
+    "\"temperature\":";
+
+
+  if (
+    dhtOK
+  ) {
+
+    json +=
+      String(
+        temperature,
+        1
+      );
+
+  }
+
+  else {
+
+    json +=
+      "null";
+
+  }
+
+
+  json +=
+    ",";
+
+
+  json +=
+    "\"humidity\":";
+
+
+  if (
+    dhtOK
+  ) {
+
+    json +=
+      String(
+        humidity,
+        1
+      );
+
+  }
+
+  else {
+
+    json +=
+      "null";
+
+  }
+
+
+  json +=
+    ",";
+
+
+  json +=
+    "\"dht\":\"";
+
+
+  json +=
+    dhtOK
+      ? "ONLINE"
+      : "ERROR";
+
+
+  json +=
+    "\",";
+
+
+  json +=
+    "\"device\":\"RoomMonitor-";
+
+
+  json +=
+    DEVICE_ID;
+
+
+  json +=
+    "\",";
+
+
+  json +=
+    "\"ip\":\"";
+
+
+  json +=
+    WiFi.localIP().toString();
+
+
+  json +=
+    "\",";
+
+
+  json +=
+    "\"port\":80";
+
+
+  json +=
+    "}";
+
+
+  server.send(
+    200,
+    "application/json",
+    json
+  );
+
+}
+
+
+// =====================================================
+// NOT FOUND
+// =====================================================
+
+void handleNotFound() {
+
+
+  if (
+    setupMode
+  ) {
+
+    handleSetupPage();
+
+  }
+
+  else {
+
+    server.send(
+      404,
+      "text/plain",
+      "404 - Not Found"
+    );
+
+  }
+
+}
+
+
+// =====================================================
+// READ DHT22
 // =====================================================
 
 void readDHT() {
@@ -1577,11 +2166,14 @@ void readDHT() {
     !isnan(h)
   ) {
 
+
     temperature =
       t;
 
+
     humidity =
       h;
+
 
     dhtOK =
       true;
@@ -1601,7 +2193,6 @@ void readDHT() {
       " C | Humidity: "
     );
 
-
     Serial.print(
       humidity,
       1
@@ -1615,6 +2206,7 @@ void readDHT() {
   }
 
   else {
+
 
     dhtOK =
       false;
@@ -1630,61 +2222,341 @@ void readDHT() {
 
 
 // =====================================================
-// BOOT BUTTON CHECK
+// START NORMAL MODE
 // =====================================================
 
-bool bootButtonHeld() {
+void startNormalMode() {
+
+
+  setupMode =
+    false;
+
+
+  Serial.println();
+
+  Serial.println(
+    "========================================"
+  );
+
+  Serial.println(
+    "STARTING NORMAL MODE"
+  );
+
+  Serial.println(
+    "========================================"
+  );
+
+
+  // ===================================================
+  // KEEP AP + STA
+  // ===================================================
+
+  WiFi.mode(
+    WIFI_AP_STA
+  );
+
+
+  // ===================================================
+  // MAKE SURE AP IS RUNNING
+  // ===================================================
+
+  startAccessPoint();
+
+
+  // ===================================================
+  // CONNECT SAVED WIFI
+  // ===================================================
+
+  bool connected =
+    false;
 
 
   if (
-    digitalRead(
-      BOOT_BUTTON
-    ) == LOW
+    savedSSID.length() > 0
   ) {
 
 
-    unsigned long start =
+    connected =
+      connectToWiFi(
+        savedSSID,
+        savedPassword
+      );
+
+  }
+
+
+  // ===================================================
+  // DEFAULT WIFI FALLBACK
+  // ===================================================
+
+  if (
+    !connected
+  ) {
+
+
+    Serial.println();
+
+    Serial.println(
+      "Saved Wi-Fi failed."
+    );
+
+
+    Serial.println(
+      "Trying DEFAULT Wi-Fi..."
+    );
+
+
+    connected =
+      connectToWiFi(
+        DEFAULT_WIFI_SSID,
+        DEFAULT_WIFI_PASSWORD
+      );
+
+  }
+
+
+  // ===================================================
+  // BOTH FAILED
+  // ===================================================
+
+  if (
+    !connected
+  ) {
+
+
+    Serial.println();
+
+    Serial.println(
+      "========================================"
+    );
+
+
+    Serial.println(
+      "NO WIFI CONNECTION"
+    );
+
+
+    Serial.println(
+      "Starting SETUP MODE"
+    );
+
+
+    Serial.println(
+      "========================================"
+    );
+
+
+    startSetupMode();
+
+
+    return;
+
+  }
+
+
+  // ===================================================
+  // NORMAL ROUTES
+  // ===================================================
+
+  server.on(
+    "/",
+    HTTP_GET,
+    handleRoot
+  );
+
+
+  server.on(
+    "/data",
+    HTTP_GET,
+    handleData
+  );
+
+
+  server.on(
+    "/wifi",
+    HTTP_GET,
+    handleWiFiPage
+  );
+
+
+  server.on(
+    "/savewifi",
+    HTTP_POST,
+    handleSaveWiFiNormal
+  );
+
+
+  server.on(
+    "/reset",
+    HTTP_GET,
+    handleResetWiFi
+  );
+
+
+  server.onNotFound(
+    handleNotFound
+  );
+
+
+  server.begin();
+
+
+  Serial.println();
+
+  Serial.println(
+    "========================================"
+  );
+
+  Serial.println(
+    "ROOM MONITOR READY"
+  );
+
+  Serial.println(
+    "========================================"
+  );
+
+
+  Serial.print(
+    "Device: RoomMonitor-"
+  );
+
+  Serial.println(
+    DEVICE_ID
+  );
+
+
+  Serial.print(
+    "Lab Wi-Fi IP: "
+  );
+
+  Serial.println(
+    WiFi.localIP()
+  );
+
+
+  Serial.println(
+    "Lab Dashboard Port: 80"
+  );
+
+
+  Serial.print(
+    "Lab Dashboard: http://"
+  );
+
+  Serial.println(
+    WiFi.localIP()
+  );
+
+
+  Serial.print(
+    "Management AP: "
+  );
+
+  Serial.println(
+    AP_SSID
+  );
+
+
+  Serial.println(
+    "Management AP IP: 192.168.4.1"
+  );
+
+
+  Serial.println(
+    "Management AP Port: 80"
+  );
+
+
+  Serial.println(
+    "========================================"
+  );
+
+}
+
+
+// =====================================================
+// BOOT BUTTON
+// =====================================================
+
+void checkBootButton() {
+
+
+  bool pressed =
+    digitalRead(
+      BOOT_BUTTON
+    ) == LOW;
+
+
+  if (
+    pressed &&
+    !buttonPressed
+  ) {
+
+
+    buttonPressed =
+      true;
+
+
+    buttonStart =
       millis();
 
 
     Serial.println();
 
     Serial.println(
-      "BOOT button detected."
+      "BOOT button pressed."
     );
 
+  }
 
-    while (
-      digitalRead(
-        BOOT_BUTTON
-      ) == LOW
+
+  if (
+    pressed &&
+    buttonPressed
+  ) {
+
+
+    if (
+      millis() -
+      buttonStart >=
+      CONFIG_HOLD_TIME
     ) {
 
 
-      if (
-        millis() - start >=
-        CONFIG_HOLD_TIME
-      ) {
+      Serial.println();
+
+      Serial.println(
+        "BOOT held for 3 seconds."
+      );
 
 
-        Serial.println(
-          "BOOT button held for 3 seconds."
-        );
+      Serial.println(
+        "Entering Wi-Fi setup..."
+      );
 
 
-        return true;
-
-      }
+      delay(500);
 
 
-      delay(50);
+      startSetupMode();
+
+
+      buttonPressed =
+        false;
 
     }
 
   }
 
 
-  return false;
+  if (
+    !pressed
+  ) {
+
+    buttonPressed =
+      false;
+
+  }
 
 }
 
@@ -1715,6 +2587,10 @@ void setup() {
   );
 
   Serial.println(
+    "ROOM MONITOR"
+  );
+
+  Serial.println(
     "DHT22 + WIFI MANAGER"
   );
 
@@ -1724,7 +2600,7 @@ void setup() {
 
 
   // ===================================================
-  // BOOT BUTTON
+  // BOOT
   // ===================================================
 
   pinMode(
@@ -1746,32 +2622,76 @@ void setup() {
 
 
   // ===================================================
-  // CHECK BOOT BUTTON
-  // ===================================================
-
-  if (
-    bootButtonHeld()
-  ) {
-
-
-    Serial.println(
-      "Manual Wi-Fi configuration requested."
-    );
-
-
-    startSetupMode();
-
-
-    return;
-
-  }
-
-
-  // ===================================================
   // LOAD SAVED WIFI
   // ===================================================
 
   loadWiFiCredentials();
+
+
+  // ===================================================
+  // START AP FIRST
+  // ===================================================
+
+  startAccessPoint();
+
+
+  // ===================================================
+  // CHECK IF BOOT IS HELD
+  // ===================================================
+
+  delay(100);
+
+
+  if (
+    digitalRead(
+      BOOT_BUTTON
+    ) == LOW
+  ) {
+
+
+    unsigned long start =
+      millis();
+
+
+    Serial.println();
+
+    Serial.println(
+      "BOOT button is held."
+    );
+
+
+    while (
+      digitalRead(
+        BOOT_BUTTON
+      ) == LOW
+    ) {
+
+
+      if (
+        millis() -
+        start >=
+        CONFIG_HOLD_TIME
+      ) {
+
+
+        Serial.println(
+          "Manual setup requested."
+        );
+
+
+        startSetupMode();
+
+
+        return;
+
+      }
+
+
+      delay(50);
+
+    }
+
+  }
 
 
   // ===================================================
@@ -1786,12 +2706,12 @@ void setup() {
     Serial.println();
 
     Serial.println(
-      "No saved Wi-Fi found."
+      "No saved Wi-Fi."
     );
 
 
     Serial.println(
-      "Starting first-run setup hotspot..."
+      "Starting first-run setup..."
     );
 
 
@@ -1804,147 +2724,10 @@ void setup() {
 
 
   // ===================================================
-  // TRY SAVED WIFI
+  // NORMAL MODE
   // ===================================================
 
-  if (
-    connectToWiFi(
-      savedSSID,
-      savedPassword
-    )
-  ) {
-
-
-    // Normal mode
-
-  }
-
-  else {
-
-
-    // =================================================
-    // TRY DEFAULT WIFI
-    // =================================================
-
-    Serial.println();
-
-    Serial.println(
-      "Saved Wi-Fi failed."
-    );
-
-
-    Serial.println(
-      "Trying DEFAULT Wi-Fi..."
-    );
-
-
-    if (
-      connectToWiFi(
-        DEFAULT_WIFI_SSID,
-        DEFAULT_WIFI_PASSWORD
-      )
-    ) {
-
-
-      Serial.println(
-        "Default Wi-Fi connected."
-      );
-
-    }
-
-    else {
-
-
-      // ===============================================
-      // BOTH FAILED
-      // ===============================================
-
-      Serial.println();
-
-      Serial.println(
-        "Saved Wi-Fi FAILED."
-      );
-
-
-      Serial.println(
-        "Default Wi-Fi FAILED."
-      );
-
-
-      Serial.println(
-        "Starting setup hotspot..."
-      );
-
-
-      startSetupMode();
-
-
-      return;
-
-    }
-
-  }
-
-
-  // ===================================================
-  // NORMAL SERVER
-  // ===================================================
-
-  server.on(
-    "/",
-    HTTP_GET,
-    handleDashboard
-  );
-
-
-  server.on(
-    "/wifi",
-    HTTP_GET,
-    handleWiFiConfig
-  );
-
-
-  server.on(
-    "/savewifi",
-    HTTP_POST,
-    handleSaveWiFi
-  );
-
-
-  server.on(
-    "/reset",
-    HTTP_GET,
-    handleResetWiFi
-  );
-
-
-  server.begin();
-
-
-  Serial.println();
-
-  Serial.println(
-    "========================================"
-  );
-
-  Serial.println(
-    "ROOM MONITOR READY"
-  );
-
-  Serial.println(
-    "========================================"
-  );
-
-
-  Serial.print(
-    "Dashboard: http://"
-  );
-
-
-  Serial.println(
-    WiFi.localIP()
-  );
-
+  startNormalMode();
 
 }
 
@@ -1971,13 +2754,31 @@ void loop() {
     server.handleClient();
 
 
+    // DHT continues
+
+    if (
+      millis() -
+      lastDHTRead >=
+      DHT_INTERVAL
+    ) {
+
+
+      lastDHTRead =
+        millis();
+
+
+      readDHT();
+
+    }
+
+
     return;
 
   }
 
 
   // ===================================================
-  // NORMAL MODE
+  // NORMAL
   // ===================================================
 
   server.handleClient();
@@ -1988,7 +2789,8 @@ void loop() {
   // ===================================================
 
   if (
-    millis() - lastDHTRead >=
+    millis() -
+    lastDHTRead >=
     DHT_INTERVAL
   ) {
 
@@ -2006,59 +2808,6 @@ void loop() {
   // BOOT BUTTON
   // ===================================================
 
-  static unsigned long buttonStart =
-    0;
-
-  static bool buttonPressed =
-    false;
-
-
-  if (
-    digitalRead(
-      BOOT_BUTTON
-    ) == LOW
-  ) {
-
-
-    if (!buttonPressed) {
-
-      buttonPressed =
-        true;
-
-      buttonStart =
-        millis();
-
-    }
-
-
-    if (
-      millis() - buttonStart >=
-      CONFIG_HOLD_TIME
-    ) {
-
-
-      Serial.println();
-
-      Serial.println(
-        "Manual Wi-Fi setup requested."
-      );
-
-
-      delay(500);
-
-
-      startSetupMode();
-
-    }
-
-  }
-
-  else {
-
-
-    buttonPressed =
-      false;
-
-  }
+  checkBootButton();
 
 }
